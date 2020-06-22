@@ -6,6 +6,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import datawave.accumulo.util.security.UserAuthFunctions;
 import datawave.microservice.authorization.user.ProxiedUserDetails;
+import datawave.microservice.dictionary.config.ConnectionConfig;
 import datawave.microservice.dictionary.config.DataDictionaryProperties;
 import datawave.microservice.dictionary.config.ResponseObjectFactory;
 import datawave.microservice.dictionary.data.DatawaveDataDictionary;
@@ -42,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static datawave.microservice.http.converter.protostuff.ProtostuffHttpMessageConverter.PROTOSTUFF_VALUE;
@@ -67,7 +69,7 @@ public class DataDictionaryOperations<DESC extends DescriptionBase<DESC>,DICT ex
         this.responseObjectFactory = responseObjectFactory;
         this.userAuthFunctions = userAuthFunctions;
         this.accumuloConnector = accumuloConnector;
-        dataDictionary.setNormalizerMapping(dataDictionaryConfiguration.getNormalizerMap());
+        dataDictionary.setNormalizationMap(dataDictionaryConfiguration.getNormalizerMap());
     }
     
     @ResponseBody
@@ -87,13 +89,23 @@ public class DataDictionaryOperations<DESC extends DescriptionBase<DESC>,DICT ex
         if (null == metadataTableName || StringUtils.isBlank(metadataTableName)) {
             metadataTableName = this.dataDictionaryConfiguration.getMetadataTableName();
         }
-        
-        Collection<String> dataTypes = (StringUtils.isBlank(dataTypeFilters) ? Collections.emptyList() : Arrays.asList(dataTypeFilters.split(",")));
-        
-        // If the user provides authorizations, intersect it with their actual authorizations
+    
+        ConnectionConfig connectionConfig = getConnectionConfig(metadataTableName, modelTableName, modelName);
+        connectionConfig.setAuths(getDowngradedAuthorizations(queryAuthorizations, currentUser));
         Set<Authorizations> auths = getDowngradedAuthorizations(queryAuthorizations, currentUser);
-        Collection<META> fields = dataDictionary.getFields(modelName, modelTableName, metadataTableName, dataTypes, accumuloConnector, auths,
-                        dataDictionaryConfiguration.getNumThreads());
+    
+        System.out.println(connectionConfig);
+        System.out.println("metadata table: " + metadataTableName);
+        System.out.println("model table: " + modelTableName);
+        System.out.println("model name: " + modelName);
+        System.out.println("auths: " + auths);
+    
+        Collection<String> dataTypes = (StringUtils.isBlank(dataTypeFilters) ? Collections.emptyList() : Arrays.asList(dataTypeFilters.split(",")));
+    
+        // If the user provides authorizations, intersect it with their actual authorizations
+        //Collection<META> fields = dataDictionary.getFields(modelName, modelTableName, metadataTableName, dataTypes, accumuloConnector, auths,
+        //                dataDictionaryConfiguration.getNumThreads());
+        Collection<META> fields = dataDictionary.getFields(connectionConfig, dataTypes, dataDictionaryConfiguration.getNumThreads());
         DICT dataDictionary = responseObjectFactory.getDataDictionary();
         dataDictionary.setFields(fields);
         return dataDictionary;
@@ -360,6 +372,19 @@ public class DataDictionaryOperations<DESC extends DescriptionBase<DESC>,DICT ex
         // TODO: reload model table cache?
         // cache.reloadCache(modelTable);
         return new VoidResponse();
+    }
+    
+    private ConnectionConfig getConnectionConfig(String metadataTable, String modelTable, String modelName) {
+        ConnectionConfig connectionConfig = new ConnectionConfig();
+        connectionConfig.setConnector(accumuloConnector);
+        connectionConfig.setMetadataTable(getSupplierValueIfBlank(metadataTable, dataDictionaryConfiguration::getMetadataTableName));
+        connectionConfig.setModelTable(getSupplierValueIfBlank(modelTable, dataDictionaryConfiguration::getModelTableName));
+        connectionConfig.setModelName(getSupplierValueIfBlank(modelName, dataDictionaryConfiguration::getModelName));
+        return connectionConfig;
+    }
+    
+    private String getSupplierValueIfBlank(String value, Supplier<String> supplier) {
+        return StringUtils.isBlank(value) ? supplier.get() : value;
     }
     
     private Set<Authorizations> getAuths(ProxiedUserDetails currentUser) {

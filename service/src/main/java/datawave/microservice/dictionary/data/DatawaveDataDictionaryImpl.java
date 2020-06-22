@@ -1,19 +1,12 @@
 package datawave.microservice.dictionary.data;
 
-import java.io.IOException;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.SortedMap;
-
 import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
 import datawave.data.ColumnFamilyConstants;
 import datawave.marking.MarkingFunctions;
+import datawave.microservice.dictionary.config.ConnectionConfig;
 import datawave.microservice.dictionary.config.ResponseObjectFactory;
 import datawave.microservice.metadata.MetadataDescriptionsHelper;
 import datawave.microservice.metadata.MetadataDescriptionsHelperFactory;
@@ -26,7 +19,6 @@ import datawave.webservice.query.result.metadata.DefaultMetadataField;
 import datawave.webservice.results.datadictionary.DefaultDataDictionary;
 import datawave.webservice.results.datadictionary.DefaultDescription;
 import datawave.webservice.results.datadictionary.DefaultDictionaryField;
-
 import datawave.webservice.results.datadictionary.DefaultFields;
 import org.apache.accumulo.core.client.BatchScanner;
 import org.apache.accumulo.core.client.Connector;
@@ -39,15 +31,22 @@ import org.apache.accumulo.core.iterators.user.WholeRowIterator;
 import org.apache.accumulo.core.security.Authorizations;
 import org.apache.accumulo.core.security.ColumnVisibility;
 import org.apache.hadoop.io.Text;
-
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Multimap;
 import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.CollectionUtils;
+
+import java.io.IOException;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.SortedMap;
 
 public class DatawaveDataDictionaryImpl implements DatawaveDataDictionary<DefaultMetadataField,DefaultDescription,DefaultDictionaryField> {
     private static final Logger log = LoggerFactory.getLogger(DatawaveDataDictionaryImpl.class);
@@ -55,7 +54,7 @@ public class DatawaveDataDictionaryImpl implements DatawaveDataDictionary<Defaul
     private static final String DATE_FORMAT_STRING_TO_SECONDS = "yyyyMMddHHmmss";
     private static final DateTimeFormatter DTF_Seconds = DateTimeFormat.forPattern(DATE_FORMAT_STRING_TO_SECONDS);
     
-    private Map<String,String> normalizerMapping = Maps.newHashMap();
+    private Map<String,String> normalizationMap = Maps.newHashMap();
     
     private final MarkingFunctions markingFunctions;
     private final ResponseObjectFactory<DefaultDescription,DefaultDataDictionary,DefaultMetadataField,DefaultDictionaryField,DefaultFields> responseObjectFactory;
@@ -72,13 +71,25 @@ public class DatawaveDataDictionaryImpl implements DatawaveDataDictionary<Defaul
     }
     
     @Override
-    public Map<String,String> getNormalizerMapping() {
-        return normalizerMapping;
+    public Map<String,String> getNormalizationMap() {
+        return normalizationMap;
     }
     
     @Override
-    public void setNormalizerMapping(Map<String,String> normalizerMapping) {
-        this.normalizerMapping = normalizerMapping;
+    public void setNormalizationMap(Map<String,String> normalizationMap) {
+        this.normalizationMap = normalizationMap;
+    }
+    
+    @Override
+    public Collection<DefaultMetadataField> getFields(String modelName, String modelTableName, String metadataTableName, Collection<String> dataTypeFilters,
+                    Connector connector, Set<Authorizations> auths, int numThreads) throws Exception {
+        ConnectionConfig connectionConfig = new ConnectionConfig();
+        connectionConfig.setConnector(connector);
+        connectionConfig.setMetadataTable(metadataTableName);
+        connectionConfig.setModelTable(modelTableName);
+        connectionConfig.setModelName(modelName);
+        connectionConfig.setAuths(auths);
+        return getFields(connectionConfig, dataTypeFilters, numThreads);
     }
     
     /*
@@ -87,12 +98,11 @@ public class DatawaveDataDictionaryImpl implements DatawaveDataDictionary<Defaul
      * Note: dataTypeFilters can be empty, which means all the fields will be returned
      */
     @Override
-    public Collection<DefaultMetadataField> getFields(String modelName, String modelTableName, String metadataTableName, Collection<String> dataTypeFilters,
-                    Connector connector, Set<Authorizations> auths, int numThreads) throws Exception {
+    public Collection<DefaultMetadataField> getFields(ConnectionConfig connectionConfig, Collection<String> dataTypeFilters, int numThreads) throws Exception {
         // Get a MetadataHelper
-        MetadataHelper metadataHelper = metadataHelperFactory.createMetadataHelper(connector, metadataTableName, auths);
+        MetadataHelper metadataHelper = metadataHelperFactory.createMetadataHelper(connectionConfig.getConnector(), connectionConfig.getMetadataTable(), connectionConfig.getAuths());
         // So we can get a QueryModel
-        QueryModel queryModel = metadataHelper.getQueryModel(modelTableName, modelName, metadataHelper.getIndexOnlyFields(null));
+        QueryModel queryModel = metadataHelper.getQueryModel(connectionConfig.getModelTable(), connectionConfig.getModelName(), metadataHelper.getIndexOnlyFields(null));
         
         Map<String,String> reverseMapping;
         
@@ -104,7 +114,7 @@ public class DatawaveDataDictionaryImpl implements DatawaveDataDictionary<Defaul
         }
         
         // Fetch the results from Accumulo
-        BatchScanner bs = fetchResults(connector, metadataTableName, auths, numThreads);
+        BatchScanner bs = fetchResults(connectionConfig.getConnector(), connectionConfig.getMetadataTable(), connectionConfig.getAuths(), numThreads);
         
         // Convert them into a response object
         Collection<DefaultMetadataField> fields = transformResults(bs.iterator(), reverseMapping, dataTypeFilters);
@@ -246,8 +256,8 @@ public class DatawaveDataDictionaryImpl implements DatawaveDataDictionary<Defaul
     }
     
     public String translate(String normalizer) {
-        if (normalizerMapping.containsKey(normalizer)) {
-            String type = normalizerMapping.get(normalizer);
+        if (normalizationMap.containsKey(normalizer)) {
+            String type = normalizationMap.get(normalizer);
             if (null != type) {
                 return type;
             }
