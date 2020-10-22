@@ -78,33 +78,14 @@ public class DataDictionaryOperations<DESC extends DescriptionBase<DESC>,DICT ex
     public DataDictionaryBase<DICT,META> get(@RequestParam(required = false) String modelName, @RequestParam(required = false) String modelTableName,
                     @RequestParam(required = false) String metadataTableName, @RequestParam(name = "auths", required = false) String queryAuthorizations,
                     @RequestParam(defaultValue = "") String dataTypeFilters, @AuthenticationPrincipal ProxiedUserDetails currentUser) throws Exception {
-        if (null == modelName || StringUtils.isBlank(modelName)) {
-            modelName = this.dataDictionaryConfiguration.getModelName();
-        }
-        
-        if (null == modelTableName || StringUtils.isBlank(modelTableName)) {
-            modelTableName = this.dataDictionaryConfiguration.getModelTableName();
-        }
-        
-        if (null == metadataTableName || StringUtils.isBlank(metadataTableName)) {
-            metadataTableName = this.dataDictionaryConfiguration.getMetadataTableName();
-        }
+        modelName = getDefaultIfBlank(modelName, dataDictionaryConfiguration::getModelName);
+        modelTableName = getDefaultIfBlank(modelTableName, dataDictionaryConfiguration::getModelTableName);
+        metadataTableName = getDefaultIfBlank(metadataTableName, dataDictionaryConfiguration::getMetadataTableName);
     
         ConnectionConfig connectionConfig = getConnectionConfig(metadataTableName, modelTableName, modelName);
         connectionConfig.setAuths(getDowngradedAuthorizations(queryAuthorizations, currentUser));
-        Set<Authorizations> auths = getDowngradedAuthorizations(queryAuthorizations, currentUser);
-    
-        System.out.println(connectionConfig);
-        System.out.println("metadata table: " + metadataTableName);
-        System.out.println("model table: " + modelTableName);
-        System.out.println("model name: " + modelName);
-        System.out.println("auths: " + auths);
-    
         Collection<String> dataTypes = (StringUtils.isBlank(dataTypeFilters) ? Collections.emptyList() : Arrays.asList(dataTypeFilters.split(",")));
     
-        // If the user provides authorizations, intersect it with their actual authorizations
-        //Collection<META> fields = dataDictionary.getFields(modelName, modelTableName, metadataTableName, dataTypes, accumuloConnector, auths,
-        //                dataDictionaryConfiguration.getNumThreads());
         Collection<META> fields = dataDictionary.getFields(connectionConfig, dataTypes, dataDictionaryConfiguration.getNumThreads());
         DICT dataDictionary = responseObjectFactory.getDataDictionary();
         dataDictionary.setFields(fields);
@@ -130,21 +111,15 @@ public class DataDictionaryOperations<DESC extends DescriptionBase<DESC>,DICT ex
     @Timed(name = "dw.dictionary.data.uploadDescriptions", absolute = true)
     public VoidResponse uploadDescriptions(@RequestBody FIELDS fields, @RequestParam(required = false) String modelName,
                     @RequestParam(required = false) String modelTable, @AuthenticationPrincipal ProxiedUserDetails currentUser) throws Exception {
-        if (StringUtils.isBlank(modelName)) {
-            modelName = this.dataDictionaryConfiguration.getModelName();
-        }
-        
-        if (StringUtils.isBlank(modelTable)) {
-            modelTable = this.dataDictionaryConfiguration.getModelTableName();
-        }
+        modelName = getDefaultIfBlank(modelName, dataDictionaryConfiguration::getModelName);
+        modelTable = getDefaultIfBlank(modelTable, dataDictionaryConfiguration::getModelTableName);
         
         Set<Authorizations> auths = getAuths(currentUser);
         List<FIELD> list = fields.getFields();
         for (FIELD desc : list) {
             dataDictionary.setDescription(accumuloConnector, dataDictionaryConfiguration.getMetadataTableName(), auths, modelName, modelTable, desc);
         }
-        // TODO: reload model table cache?
-        // cache.reloadCache(modelTable);
+        
         return new VoidResponse();
     }
     
@@ -174,6 +149,9 @@ public class DataDictionaryOperations<DESC extends DescriptionBase<DESC>,DICT ex
     public VoidResponse setDescriptionPut(@PathVariable String fieldName, @PathVariable String datatype, @PathVariable String description,
                     @RequestParam(required = false) String modelName, @RequestParam(required = false) String modelTable, @RequestParam String columnVisibility,
                     @AuthenticationPrincipal ProxiedUserDetails currentUser) throws Exception {
+        modelName = getDefaultIfBlank(modelName, dataDictionaryConfiguration::getModelName);
+        modelTable = getDefaultIfBlank(modelTable, dataDictionaryConfiguration::getModelTableName);
+        
         return setDescriptionPost(fieldName, datatype, description, modelName, modelTable, columnVisibility, currentUser);
     }
     
@@ -203,13 +181,8 @@ public class DataDictionaryOperations<DESC extends DescriptionBase<DESC>,DICT ex
     public VoidResponse setDescriptionPost(@RequestParam String fieldName, @RequestParam String datatype, @RequestParam String description,
                     @RequestParam(required = false) String modelName, @RequestParam(required = false) String modelTable, @RequestParam String columnVisibility,
                     @AuthenticationPrincipal ProxiedUserDetails currentUser) throws Exception {
-        if (StringUtils.isBlank(modelName)) {
-            modelName = this.dataDictionaryConfiguration.getModelName();
-        }
-        
-        if (StringUtils.isBlank(modelTable)) {
-            modelTable = this.dataDictionaryConfiguration.getModelTableName();
-        }
+        modelName = getDefaultIfBlank(modelName, dataDictionaryConfiguration::getModelName);
+        modelTable = getDefaultIfBlank(modelTable, dataDictionaryConfiguration::getModelTableName);
         
         Set<Authorizations> auths = getAuths(currentUser);
         DESC desc = this.responseObjectFactory.getDescription();
@@ -240,13 +213,8 @@ public class DataDictionaryOperations<DESC extends DescriptionBase<DESC>,DICT ex
     @Timed(name = "dw.dictionary.data.allDescriptions", absolute = true)
     public FIELDS allDescriptions(@RequestParam(required = false) String modelName, @RequestParam(required = false) String modelTable,
                     @AuthenticationPrincipal ProxiedUserDetails currentUser) throws Exception {
-        if (StringUtils.isBlank(modelName)) {
-            modelName = this.dataDictionaryConfiguration.getModelName();
-        }
-        
-        if (StringUtils.isBlank(modelTable)) {
-            modelTable = this.dataDictionaryConfiguration.getModelTableName();
-        }
+        modelName = getDefaultIfBlank(modelName, dataDictionaryConfiguration::getModelName);
+        modelTable = getDefaultIfBlank(modelTable, dataDictionaryConfiguration::getModelTableName);
         
         Set<Authorizations> auths = getAuths(currentUser);
         Multimap<Entry<String,String>,DESC> descriptions = dataDictionary.getDescriptions(accumuloConnector,
@@ -273,13 +241,8 @@ public class DataDictionaryOperations<DESC extends DescriptionBase<DESC>,DICT ex
     @Timed(name = "dw.dictionary.data.datatypeDescriptions", absolute = true)
     public FIELDS datatypeDescriptions(@PathVariable("datatype") String datatype, @RequestParam(required = false) String modelName,
                     @RequestParam(required = false) String modelTable, @AuthenticationPrincipal ProxiedUserDetails currentUser) throws Exception {
-        if (StringUtils.isBlank(modelName)) {
-            modelName = this.dataDictionaryConfiguration.getModelName();
-        }
-        
-        if (StringUtils.isBlank(modelTable)) {
-            modelTable = this.dataDictionaryConfiguration.getModelTableName();
-        }
+        modelName = getDefaultIfBlank(modelName, dataDictionaryConfiguration::getModelName);
+        modelTable = getDefaultIfBlank(modelTable, dataDictionaryConfiguration::getModelTableName);
         
         Set<Authorizations> auths = getAuths(currentUser);
         Multimap<Entry<String,String>,DESC> descriptions = dataDictionary.getDescriptions(accumuloConnector,
@@ -308,24 +271,19 @@ public class DataDictionaryOperations<DESC extends DescriptionBase<DESC>,DICT ex
     @Timed(name = "dw.dictionary.data.fieldNameDescription", absolute = true)
     public FIELDS fieldNameDescription(@PathVariable String fieldName, @PathVariable String datatype, @RequestParam(required = false) String modelName,
                     @RequestParam(required = false) String modelTable, @AuthenticationPrincipal ProxiedUserDetails currentUser) throws Exception {
-        if (StringUtils.isBlank(modelName)) {
-            modelName = this.dataDictionaryConfiguration.getModelName();
-        }
-        
-        if (StringUtils.isBlank(modelTable)) {
-            modelTable = this.dataDictionaryConfiguration.getModelTableName();
-        }
+        modelName = getDefaultIfBlank(modelName, dataDictionaryConfiguration::getModelName);
+        modelTable = getDefaultIfBlank(modelTable, dataDictionaryConfiguration::getModelTableName);
         
         Set<Authorizations> auths = getAuths(currentUser);
         Set<DESC> descriptions = dataDictionary.getDescriptions(accumuloConnector, this.dataDictionaryConfiguration.getMetadataTableName(), auths, modelName,
                         modelTable, fieldName, datatype);
         FIELDS response = responseObjectFactory.getFields();
         if (!descriptions.isEmpty()) {
-            Multimap<Entry<String,String>,DESC> mmap = HashMultimap.create();
+            Multimap<Entry<String,String>,DESC> map = HashMultimap.create();
             for (DESC desc : descriptions) {
-                mmap.put(Maps.immutableEntry(fieldName, datatype), desc);
+                map.put(Maps.immutableEntry(fieldName, datatype), desc);
             }
-            response.setDescriptions(mmap);
+            response.setDescriptions(map);
         }
         return response;
     }
@@ -352,13 +310,8 @@ public class DataDictionaryOperations<DESC extends DescriptionBase<DESC>,DICT ex
     public VoidResponse deleteDescription(@PathVariable String fieldName, @PathVariable String datatype, @RequestParam(required = false) String modelName,
                     @RequestParam(required = false) String modelTable, @RequestParam String columnVisibility,
                     @AuthenticationPrincipal ProxiedUserDetails currentUser) throws Exception {
-        if (StringUtils.isBlank(modelName)) {
-            modelName = this.dataDictionaryConfiguration.getModelName();
-        }
-        
-        if (StringUtils.isBlank(modelTable)) {
-            modelTable = this.dataDictionaryConfiguration.getModelTableName();
-        }
+        modelName = getDefaultIfBlank(modelName, dataDictionaryConfiguration::getModelName);
+        modelTable = getDefaultIfBlank(modelTable, dataDictionaryConfiguration::getModelTableName);
         
         Set<Authorizations> auths = getAuths(currentUser);
         Map<String,String> markings = Maps.newHashMap();
@@ -377,14 +330,14 @@ public class DataDictionaryOperations<DESC extends DescriptionBase<DESC>,DICT ex
     private ConnectionConfig getConnectionConfig(String metadataTable, String modelTable, String modelName) {
         ConnectionConfig connectionConfig = new ConnectionConfig();
         connectionConfig.setConnector(accumuloConnector);
-        connectionConfig.setMetadataTable(getSupplierValueIfBlank(metadataTable, dataDictionaryConfiguration::getMetadataTableName));
-        connectionConfig.setModelTable(getSupplierValueIfBlank(modelTable, dataDictionaryConfiguration::getModelTableName));
-        connectionConfig.setModelName(getSupplierValueIfBlank(modelName, dataDictionaryConfiguration::getModelName));
+        connectionConfig.setMetadataTable(getDefaultIfBlank(metadataTable, dataDictionaryConfiguration::getMetadataTableName));
+        connectionConfig.setModelTable(getDefaultIfBlank(modelTable, dataDictionaryConfiguration::getModelTableName));
+        connectionConfig.setModelName(getDefaultIfBlank(modelName, dataDictionaryConfiguration::getModelName));
         return connectionConfig;
     }
     
-    private String getSupplierValueIfBlank(String value, Supplier<String> supplier) {
-        return StringUtils.isBlank(value) ? supplier.get() : value;
+    private String getDefaultIfBlank(String value, Supplier<String> defaultValue) {
+        return StringUtils.isBlank(value) ? defaultValue.get() : value;
     }
     
     private Set<Authorizations> getAuths(ProxiedUserDetails currentUser) {
